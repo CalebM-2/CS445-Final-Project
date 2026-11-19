@@ -4,8 +4,17 @@ Usage:
     python src/explore.py                      # default seasons 2016-2023
     python src/explore.py --start 2020 --end 2023
 """
+
+try:
+    import truststore
+    truststore.inject_into_ssl()   # use Windows' trusted certificates
+except ImportError:
+    pass
+
 import argparse
 from pathlib import Path
+
+import shutil, time, urllib.request
 
 import pandas as pd
 
@@ -23,24 +32,36 @@ COLUMNS = [
 ]
 
 
-def load_season(season: int) -> pd.DataFrame:
-    """Load one season, caching the downloaded file under data/."""
-    DATA_DIR.mkdir(exist_ok=True)
-    cache = DATA_DIR / f"pbp_{season}.parquet"
-    if cache.exists():
+def download(url: str, dest: Path, tries: int = 3) -> None:
+    """Download url to dest with a timeout and retries."""
+    part = dest.with_suffix(dest.suffix + ".part")
+    for attempt in range(1, tries + 1):
         try:
-            return pd.read_parquet(cache)
-        except Exception:
-            pass  # fall through and re-download
-    print(f"Downloading {season}...")
-    df = pd.read_csv(URL.format(season=season), compression="gzip",
-                     usecols=lambda c: c in COLUMNS, low_memory=False)
-    try:
-        df.to_parquet(cache)
-    except Exception:
-        df.to_csv(DATA_DIR / f"pbp_{season}.csv", index=False)
-    return df
+            with urllib.request.urlopen(url, timeout=30) as r, \
+                    open(part, "wb") as f:
+                shutil.copyfileobj(r, f)
+            part.replace(dest)          # only appears once fully downloaded
+            return
+        except Exception as e:
+            print(f"  attempt {attempt} failed: {e}")
+            part.unlink(missing_ok=True)
+            time.sleep(2)
+    raise RuntimeError(f"Could not download {url}")
 
+def load_season(season: int) -> pd.DataFrame:
+    """Load one season, caching a trimmed copy under data/."""
+    DATA_DIR.mkdir(exist_ok=True)
+    trimmed = DATA_DIR / f"pbp_{season}.csv"
+    if trimmed.exists():
+        return pd.read_csv(trimmed, low_memory=False)
+    raw = DATA_DIR / f"play_by_play_{season}.csv.gz"
+    if not raw.exists():
+        print(f"Downloading {season}...")
+        download(URL.format(season=season), raw)
+    df = pd.read_csv(raw, compression="gzip",
+                     usecols=lambda c: c in COLUMNS, low_memory=False)
+    df.to_csv(trimmed, index=False)
+    return df
 
 def main() -> None:
     ap = argparse.ArgumentParser()
