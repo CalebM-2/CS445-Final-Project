@@ -2,7 +2,7 @@
 
 NFL Play Prediction
 
-Authors: FIRST LAST, FIRST LAST (CS 445, Fall 2026)
+Authors: Caleb Meadows, Thomas Fowler (CS 445, Fall 2026)
 
 A model that predicts what play an NFL offense will call, given the game situation (team, down, distance, field position, quarter, time left, score, timeouts), plus a small demo where you pick a situation and see the predicted play probabilities.
 
